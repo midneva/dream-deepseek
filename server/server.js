@@ -3,10 +3,15 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
 const app = express();
+// 获取当前文件的目录路径（ES模块专用）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const port = process.env.PORT || 3001;
 
 // DeepSeek配置
@@ -21,6 +26,8 @@ const lightLibrary = new Map();
 
 app.use(cors());
 app.use(express.json());
+// 托管静态文件（让前端页面能被访问）
+app.use(express.static(path.join(__dirname, '..', 'client')));
 
 // ========== 剧本库 - 带着爱与光明的真实案例 ==========
 const storyLibrary = {
