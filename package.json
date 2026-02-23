@@ -1,0 +1,7 @@
+{
+  "name": "dream-deepseek",
+  "private": true,
+  "engines": {
+    "node": "18.x"
+  }
+}
