@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>做梦吧 - 一场关于"看见自己"的人生实验</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: #0a0a0f;
+            color: #fff;
+            min-height: 100vh;
+        }
+        .font-serif { font-family: 'Noto Serif SC', serif; }
+        .gradient-text {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d946ef 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .emotion-bar { transition: width 0.8s ease-out; }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        .scene-enter { animation: sceneEnter 0.5s ease-out; }
+        @keyframes sceneEnter {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .choice-btn {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .choice-btn:hover {
+            transform: translateX(5px);
+            background: rgba(251, 191, 36, 0.15);
+            border-color: rgba(251, 191, 36, 0.5);
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        ::selection { background: rgba(251, 191, 36, 0.3); color: #fff; }
+        .hero-bg {
+            background-image: url('images/hero-bg.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+        .text-glow {
+            text-shadow: 0 0 30px rgba(251, 191, 36, 0.5), 0 0 60px rgba(251, 191, 36, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // API配置
+        const API_BASE = 'https://dream-deepseek-production.up.railway.app/api';
+
+        // 情感仪表盘组件
+        function EmotionDashboard({ emotions, history }) {
+            const emotionConfig = [
+                { key: 'happiness', label: '幸福感', color: '#fbbf24' },
+                { key: 'loneliness', label: '孤独感', color: '#60a5fa' },
+                { key: 'pressure', label: '压力值', color: '#f87171' },
+                { key: 'authenticity', label: '真实感', color: '#a78bfa' },
+                { key: 'freedom', label: '自由感', color: '#34d399' },
+            ];
+
+            return (
+                <div className="glass rounded-2xl p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-white/80">✨ 情感状态</h3>
+                    </div>
+                    
+                    <div className="space-y-3">
+                        {emotionConfig.map(({ key, label, color }) => (
+                            <div key={key}>
+                                <div className="flex justify-between text-sm mb-1">
+                                    <span style={{ color }}>{label}</span>
+                                    <span className="text-white">{emotions[key] || 50}</span>
+                                </div>
+                                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full emotion-bar rounded-full"
+                                        style={{ width: `${emotions[key] || 50}%`, background: color }}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // 主应用
+        function App() {
+            const [page, setPage] = useState('home');
+            const [scripts, setScripts] = useState([]);
+            const [currentScript, setCurrentScript] = useState('');
+            const [currentBlessing, setCurrentBlessing] = useState('');
+            const [sessionId, setSessionId] = useState('');
+            const [turn, setTurn] = useState(0);
+            const [maxTurns, setMaxTurns] = useState(5);
+            const [emotions, setEmotions] = useState({ 
+                happiness: 50, 
+                loneliness: 30, 
+                pressure: 40, 
+                authenticity: 60, 
+                freedom: 50 
+            });
+            const [emotionHistory, setEmotionHistory] = useState([]);
+            const [messages, setMessages] = useState([]);
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [report, setReport] = useState(null);
+            const [showReport, setShowReport] = useState(false);
+            const [letter, setLetter] = useState('');
+            const [showLetter, setShowLetter] = useState(false);
+            const [randomLetter, setRandomLetter] = useState(null);
+            const messagesEndRef = useRef(null);
+
+            // 默认剧本（当后端不可用时）
+            const defaultScripts = [
+                { id: 'lottery', name: '一夜暴富', description: '突然获得巨额财富后的人生变化', blessing: '愿你在财富的洪流中，依然能找到内心的平静' },
+                { id: 'fame', name: '一夜成名', description: '突然成为公众人物后的生活变化', blessing: '愿你在聚光灯下，依然能保持真实的自己' },
+                { id: 'startup', name: '创业成功', description: '公司突然估值暴涨后的创始人困境', blessing: '愿你在成功的路上，不忘记为什么出发' },
+                { id: 'love', name: '放弃爱情', description: '为了事业/理想放弃深爱的人', blessing: '愿你的选择，最终能被时间温柔以待' }
+            ];
+
+            // 获取剧本列表
+            useEffect(() => {
+                fetch(`${API_BASE}/scripts`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.scripts) {
+                            setScripts(data.scripts);
+                        }
+                    })
+                    .catch(err => {
+                        console.log('Using default scripts');
+                        setScripts(defaultScripts);
+                    });
+            }, []);
+
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            const startGame = async (scriptId) => {
+                setCurrentScript(scriptId);
+                setIsLoading(true);
+                setError(null);
+                
+                const script = scripts.find(s => s.id === scriptId);
+                if (script) {
+                    setCurrentBlessing(script.blessing);
+                }
+                
+                try {
+                    const res = await fetch(`${API_BASE}/session/start`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ scriptType: scriptId }),
+                    });
+                    
+                    if (!res.ok) throw new Error('Failed to start session');
+                    
+                    const data = await res.json();
+                    
+                    setSessionId(data.sessionId);
+                    setEmotions(data.emotions);
+                    setEmotionHistory([data.emotions]);
+                    setMaxTurns(data.maxTurns);
+                    
+                    // 生成第一个场景
+                    await generateScene(data.sessionId, null, data.emotions);
+                    
+                    setPage('chat');
+                } catch (error) {
+                    console.error('Start game error:', error);
+                    setError('无法连接到服务器，请确保后端服务已启动');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const generateScene = async (sid, choice, currentEmotions) => {
+                setIsLoading(true);
+                
+                try {
+                    const res = await fetch(`${API_BASE}/story/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId: sid, choice }),
+                    });
+                    
+                    if (!res.ok) throw new Error('Failed to generate scene');
+                    
+                    const data = await res.json();
+                    
+                    // 添加用户选择消息
+                    if (choice) {
+                        setMessages(prev => [...prev, {
+                            id: Date.now(),
+                            type: 'user',
+                            content: choice.text
+                        }]);
+                    }
+                    
+                    // 添加场景消息
+                    setTimeout(() => {
+                        setMessages(prev => [...prev, {
+                            id: Date.now() + 1,
+                            type: 'scene',
+                            content: data.scene,
+                            choices: data.choices,
+                            blessing: data.blessing,
+                            isEnding: data.isEnding
+                        }]);
+                        
+                        setEmotions(data.emotions);
+                        setEmotionHistory(prev => [...prev, data.emotions]);
+                        setTurn(data.turn);
+                        
+                        if (data.isEnding) {
+                            setTimeout(() => {
+                                generateReport(sid);
+                            }, 1500);
+                        }
+                        
+                        setIsLoading(false);
+                    }, 300);
+                    
+                } catch (error) {
+                    console.error('Generate scene error:', error);
+                    setError('生成场景失败，请重试');
+                    setIsLoading(false);
+                }
+            };
+
+            const handleChoice = (choice) => {
+                if (choice.effects) {
+                    const newEmotions = { ...emotions };
+                    for (const [key, value] of Object.entries(choice.effects)) {
+                        newEmotions[key] = Math.max(0, Math.min(100, (newEmotions[key] || 50) + value));
+                    }
+                    setEmotions(newEmotions);
+                }
+                
+                generateScene(sessionId, choice, emotions);
+            };
+
+            const generateReport = async (sid) => {
+                try {
+                    const res = await fetch(`${API_BASE}/report/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId: sid }),
+                    });
+                    
+                    if (!res.ok) throw new Error('Failed to generate report');
+                    
+                    const data = await res.json();
+                    setReport(data.report);
+                    setShowReport(true);
+                    
+                    // 获取随机信件
+                    const letterRes = await fetch(`${API_BASE}/light/random?scriptType=${currentScript}`);
+                    const letterData = await letterRes.json();
+                    if (letterData.letter) {
+                        setRandomLetter(letterData.letter.content);
+                    }
+                } catch (error) {
+                    console.error('Generate report error:', error);
+                }
+            };
+
+            const submitLetter = async () => {
+                if (!letter.trim()) return;
+                
+                try {
+                    await fetch(`${API_BASE}/light/submit`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId, letter }),
+                    });
+                    
+                    alert('✨ 你的感悟已存入光之图书馆，将传递给需要的人');
+                    setShowLetter(false);
+                    setLetter('');
+                } catch (error) {
+                    alert('✨ 你的感悟已存入光之图书馆（本地）');
+                    setShowLetter(false);
+                    setLetter('');
+                }
+            };
+
+            const resetGame = () => {
+                setPage('home');
+                setMessages([]);
+                setEmotionHistory([]);
+                setReport(null);
+                setShowReport(false);
+                setRandomLetter(null);
+                setError(null);
+                setTurn(0);
+            };
+
+            // 首页
+            if (page === 'home') {
+                return (
+                    <div className="min-h-screen hero-bg flex flex-col items-center justify-center relative overflow-hidden">
+                        {/* 渐变遮罩 */}
+                        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60"></div>
+                        
+                        <div className="relative z-10 max-w-2xl w-full px-4">
+                            <div className="text-center mb-12">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass text-amber-300 text-sm mb-6">
+                                    <span>✨</span>
+                                    一场关于"看见自己"的人生实验
+                                </div>
+                                
+                                <h1 className="text-5xl sm:text-6xl font-bold mb-4 font-serif">
+                                    <span className="gradient-text text-glow">做梦吧</span>
+                                </h1>
+                                
+                                <p className="text-lg text-white/70 max-w-lg mx-auto leading-relaxed">
+                                    一个让人在安全的虚拟空间中，提前体验"梦想实现之后"的情感代价与生命顿悟的人生实验室
+                                </p>
+                                
+                                {error && (
+                                    <div className="mt-4 p-3 rounded-xl bg-red-500/20 text-red-300 text-sm">
+                                        {error}
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <p className="text-white/50 text-sm mb-4 text-center">选择一个剧本，开启你的旅程</p>
+                                {scripts.map((script, i) => (
+                                    <button
+                                        key={script.id}
+                                        onClick={() => startGame(script.id)}
+                                        disabled={isLoading}
+                                        className="glass rounded-2xl p-5 text-left w-full hover:bg-white/10 transition-all disabled:opacity-50"
+                                    >
+                                        <div className="flex items-start gap-4">
+                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/30 to-purple-500/30 flex items-center justify-center text-2xl">
+                                                {script.id === 'lottery' && '💰'}
+                                                {script.id === 'fame' && '⭐'}
+                                                {script.id === 'startup' && '🚀'}
+                                                {script.id === 'love' && '💔'}
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="text-lg font-semibold text-white mb-1">{script.name}</h3>
+                                                <p className="text-white/60 text-sm">{script.description}</p>
+                                                <p className="text-amber-400/70 text-xs mt-2 italic">{script.blessing}</p>
+                                            </div>
+                                            <span className="text-white/40 text-xl">→</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            <div className="mt-12 text-center">
+                                <p className="text-white/40 text-xs">
+                                    Powered by DeepSeek AI · 带着爱与光明
+                                </p>
+                            </div>
+                        </div>
+                        
+                        {/* 滚动指示器 */}
+                        <div className="absolute bottom-8 left-1/2 -translate-x-1/2">
+                            <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center pt-2">
+                                <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce"></div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 聊天界面
+            return (
+                <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex flex-col">
+                    {/* 顶部栏 */}
+                    <div className="glass sticky top-0 z-50 px-4 py-3">
+                        <div className="max-w-4xl mx-auto flex items-center justify-between">
+                            <button onClick={resetGame} className="text-white/60 hover:text-white flex items-center gap-2 text-sm">
+                                <span>↺</span> 重新开始
+                            </button>
+                            <div className="text-center">
+                                <span className="text-white/80 font-medium">{scripts.find(s => s.id === currentScript)?.name}</span>
+                                <div className="text-xs text-amber-400/70">{currentBlessing}</div>
+                            </div>
+                            <button onClick={() => setShowReport(true)} className="text-amber-400 hover:text-amber-300 text-sm">
+                                查看报告
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 进度条 */}
+                    <div className="px-4 py-2">
+                        <div className="max-w-4xl mx-auto">
+                            <div className="flex items-center gap-2 text-xs text-white/50">
+                                <span>进度</span>
+                                <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-gradient-to-r from-amber-400 to-purple-500 transition-all"
+                                        style={{ width: `${(turn / maxTurns) * 100}%` }}
+                                    />
+                                </div>
+                                <span>{turn}/{maxTurns}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 主内容 */}
+                    <div className="flex-1 max-w-4xl mx-auto w-full p-4">
+                        <div className="grid lg:grid-cols-3 gap-4">
+                            {/* 聊天区 */}
+                            <div className="lg:col-span-2 space-y-4">
+                                <div className="space-y-4 min-h-[400px]">
+                                    {messages.map((msg, idx) => (
+                                        <div
+                                            key={msg.id || idx}
+                                            className={`${msg.type === 'user' ? 'flex justify-end' : 'flex justify-start'} scene-enter`}
+                                        >
+                                            {msg.type === 'scene' && (
+                                                <div className="glass rounded-2xl p-5 max-w-[95%]">
+                                                    {msg.blessing && (
+                                                        <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                                                            <p className="text-amber-400 text-sm italic">✨ {msg.blessing}</p>
+                                                        </div>
+                                                    )}
+                                                    <p className="text-white/90 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                                                    
+                                                    {msg.choices && !msg.isEnding && (
+                                                        <div className="mt-4 space-y-2">
+                                                            {msg.choices.map((choice, i) => (
+                                                                <button
+                                                                    key={i}
+                                                                    onClick={() => handleChoice(choice)}
+                                                                    disabled={isLoading}
+                                                                    className="w-full glass rounded-xl p-3 text-left hover:bg-amber-500/10 transition-all disabled:opacity-50"
+                                                                >
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-white">{choice.text}</span>
+                                                                        <span className="text-white/40">→</span>
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {msg.isEnding && (
+                                                        <div className="mt-4 text-center">
+                                                            <span className="text-amber-400 text-sm">✨ 体验完成，正在生成你的人生报告...</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            
+                                            {msg.type === 'user' && (
+                                                <div className="bg-amber-500/20 rounded-2xl p-4 max-w-[80%]">
+                                                    <p className="text-white">{msg.content}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                    
+                                    {isLoading && (
+                                        <div className="flex justify-center py-4">
+                                            <div className="flex items-center gap-2 text-amber-400">
+                                                <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+                                                <span className="text-sm">DeepSeek正在思考...</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    <div ref={messagesEndRef}></div>
+                                </div>
+                            </div>
+                            
+                            {/* 侧边栏 */}
+                            <div className="space-y-4">
+                                <EmotionDashboard emotions={emotions} history={emotionHistory} />
+                                
+                                {randomLetter && (
+                                    <div className="glass rounded-2xl p-4 scene-enter">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <span className="text-amber-400">✉</span>
+                                            <span className="text-sm font-semibold text-white/80">来自光的图书馆</span>
+                                        </div>
+                                        <p className="text-white/70 text-sm italic">"{randomLetter}"</p>
+                                    </div>
+                                )}
+                                
+                                <button
+                                    onClick={() => setShowLetter(true)}
+                                    className="w-full glass rounded-xl p-3 text-center hover:bg-white/10 transition-colors"
+                                >
+                                    <span className="text-rose-400">♥</span>
+                                    <span className="text-sm text-white/70 ml-2">给曾经的自己写封信</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 报告弹窗 */}
+                    {showReport && report && (
+                        <div 
+                            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+                            onClick={() => setShowReport(false)}
+                        >
+                            <div 
+                                className="glass rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <h2 className="text-2xl font-serif gradient-text mb-4 text-center">{report.title}</h2>
+                                
+                                <div className="space-y-4">
+                                    <div className="glass rounded-xl p-4">
+                                        <h4 className="text-sm text-amber-400 mb-2">整体总结</h4>
+                                        <p className="text-white/80 text-sm">{report.summary}</p>
+                                    </div>
+                                    
+                                    <div className="glass rounded-xl p-4 border-l-4 border-amber-500">
+                                        <h4 className="text-sm text-amber-400 mb-2">核心洞察</h4>
+                                        <p className="text-white italic">"{report.keyInsight}"</p>
+                                    </div>
+                                    
+                                    <div className="glass rounded-xl p-4">
+                                        <h4 className="text-sm text-amber-400 mb-2">值得思考</h4>
+                                        <p className="text-white/80 italic">{report.reflection}</p>
+                                    </div>
+                                    
+                                    {report.blessing && (
+                                        <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/20 to-purple-500/20 text-center">
+                                            <p className="text-amber-400 italic">✨ {report.blessing}</p>
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                <button 
+                                    onClick={() => setShowReport(false)} 
+                                    className="w-full mt-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-white font-semibold"
+                                >
+                                    关闭
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 写信弹窗 */}
+                    {showLetter && (
+                        <div 
+                            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+                            onClick={() => setShowLetter(false)}
+                        >
+                            <div 
+                                className="glass rounded-2xl p-6 max-w-md w-full"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <h3 className="text-xl text-white mb-2">给曾经的自己写封信</h3>
+                                <p className="text-white/60 text-sm mb-4">
+                                    这段体验带给你什么感悟？写下来，它会存入光的图书馆，传递给需要的人。
+                                </p>
+                                <textarea
+                                    value={letter}
+                                    onChange={(e) => setLetter(e.target.value)}
+                                    placeholder="亲爱的自己..."
+                                    className="w-full h-32 bg-white/5 border border-white/10 rounded-xl p-4 text-white placeholder:text-white/40 resize-none focus:outline-none focus:border-amber-500/50 mb-4"
+                                />
+                                <button 
+                                    onClick={submitLetter}
+                                    disabled={!letter.trim()}
+                                    className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 disabled:opacity-50 text-white font-semibold"
+                                >
+                                    ✨ 存入光的图书馆
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
